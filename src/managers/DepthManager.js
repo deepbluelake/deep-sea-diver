@@ -1,27 +1,31 @@
 const ZONES = [
   {
+    // Bright tropical teal-blue
     name: 'SUNLIT',
     start: 0,
-    top: [64, 196, 190],
-    bottom: [28, 107, 160],
+    top: [0, 180, 210],
+    bottom: [0, 100, 175],
   },
   {
+    // Deep cobalt blue — starts at 400m instead of 250m
     name: 'TWILIGHT',
-    start: 250,
-    top: [30, 110, 130],
-    bottom: [15, 55, 95],
+    start: 400,
+    top: [10, 55, 130],
+    bottom: [5, 25, 95],
   },
   {
+    // Dark indigo-purple — starts at 900m instead of 600m
     name: 'MIDNIGHT',
-    start: 600,
-    top: [12, 40, 70],
-    bottom: [6, 20, 45],
+    start: 900,
+    top: [18, 8, 72],
+    bottom: [10, 4, 52],
   },
   {
+    // Near-black deep blue — starts at 1600m instead of 1000m
     name: 'ABYSS',
-    start: 1000,
-    top: [4, 10, 25],
-    bottom: [1, 3, 12],
+    start: 1600,
+    top: [6, 2, 28],
+    bottom: [2, 1, 16],
   },
 ];
 
@@ -36,22 +40,23 @@ export default class DepthManager {
   }
 
   static getDarkness(depth) {
-    const normalizedDepth = Math.min(depth / 1100, 1);
+    // Full darkness now reached at 2200m instead of 1100m — colours last much longer
+    const normalizedDepth = Math.min(depth / 2200, 1);
     const smooth = normalizedDepth * normalizedDepth * (3 - 2 * normalizedDepth);
 
     return smooth * 0.85;
   }
 
   static getZoneName(depth) {
-    if (depth >= 1000) {
+    if (depth >= 1600) {
       return 'ABYSS';
     }
 
-    if (depth >= 600) {
+    if (depth >= 900) {
       return 'MIDNIGHT';
     }
 
-    if (depth >= 250) {
+    if (depth >= 400) {
       return 'TWILIGHT';
     }
 
