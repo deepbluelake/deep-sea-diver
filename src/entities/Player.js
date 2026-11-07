@@ -49,6 +49,14 @@ export default class Player extends GameObject {
     }
 
     this.oxygen = Math.max(0, Math.min(100, this.oxygen - 4 * dt));
+
+    if (this.oxygen <= 0) {
+  this.health -= 1;
+  if (this.health > 0) {
+    this.oxygen = 100;
+  }
+}
+
     this.depth = Math.max(0, (this.pos.y - this.startY) * 0.1);
   }
 
