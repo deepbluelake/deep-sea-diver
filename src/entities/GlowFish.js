@@ -20,27 +20,14 @@ export default class GlowFish extends Creature {
     this.bobAmplitude = 15 + Math.random() * 10;
     this.bodyColor = BODY_COLORS[Math.floor(Math.random() * BODY_COLORS.length)];
     this.tailPhase = 0;
-    this.fled = false;
     this.time = 0;
   }
 
-  update(dt, player) {
+  update(dt) {
     this.time += dt;
     this.tailPhase += dt * 10;
 
-    if (!this.fled) {
-      this.pos.y = this.baseY + Math.sin(this.bobOffset + this.time * this.bobSpeed) * this.bobAmplitude;
-    }
-
-    if (player && !this.fled && this.pos.distanceTo(player.pos) < 120) {
-      this.vel = this.pos.subtract(player.pos).normalize().scale(150);
-      this.fled = true;
-    }
-
-    if (this.fled) {
-      this.vel = this.vel.scale(0.97);
-      super.update(dt);
-    }
+    this.pos.y = this.baseY + Math.sin(this.bobOffset + this.time * this.bobSpeed) * this.bobAmplitude;
   }
 
   draw(ctx) {
