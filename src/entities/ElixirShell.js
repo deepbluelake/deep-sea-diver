@@ -8,7 +8,7 @@ import Creature from './Creature.js';
  *         and a golden pulse ring.
  */
 
-const SHIELD_DURATION = 6; // seconds of invincibility
+const SHIELD_DURATION = 12; // seconds of invincibility
 
 export default class ElixirShell extends Creature {
   constructor(x, y) {

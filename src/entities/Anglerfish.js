@@ -1,6 +1,6 @@
-cls
 import Vector2 from '../core/Vector2.js';
 import Creature from './Creature.js';
+
 
 export default class Anglerfish extends Creature {
   constructor(x, y) {
