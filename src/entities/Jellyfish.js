@@ -63,6 +63,10 @@ export default class Jellyfish extends Creature {
   }
 
   onCollisionWithPlayer(player) {
+    if (player.shieldTimer > 0) {
+      this.alive = false; // shield absorbs the hit
+      return;
+    }
     player.health -= this.damage;
     this.alive = false;
   }

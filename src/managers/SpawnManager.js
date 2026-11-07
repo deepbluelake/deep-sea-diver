@@ -1,5 +1,6 @@
 import Creature from '../entities/Creature.js';
 import Anglerfish from '../entities/Anglerfish.js';
+import ElixirShell from '../entities/ElixirShell.js';
 import GlowFish from '../entities/GlowFish.js';
 import Jellyfish from '../entities/Jellyfish.js';
 
@@ -30,6 +31,12 @@ export default class SpawnManager {
   spawnCreature(camera, canvas) {
     const depth = this.game.player.depth;
     const roll = Math.random();
+
+    // Rare ElixirShell — 3% chance, only below 300m
+    if (depth >= 300 && roll < 0.03) {
+      this.spawnCreatureType(ElixirShell, camera, canvas);
+      return;
+    }
 
     if (depth >= 500) {
       if (roll < 0.2) {

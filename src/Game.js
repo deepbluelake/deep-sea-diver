@@ -6,6 +6,7 @@ import CollisionManager from './managers/CollisionManager.js';
 import DepthManager from './managers/DepthManager.js';
 import ParticleField from './managers/ParticleField.js';
 import SpawnManager from './managers/SpawnManager.js';
+import PauseMenu from './ui/PauseMenu.js';
 
 export default class Game {
   constructor(canvas) {
@@ -20,6 +21,8 @@ export default class Game {
     this.lightCanvas = document.createElement('canvas');
     this.lightCtx = this.lightCanvas.getContext('2d');
     this.titleFish = [];
+    this.pauseMenu = new PauseMenu(this);
+    this.paused = false;
 
     this.width = 0;
     this.height = 0;
@@ -46,6 +49,9 @@ export default class Game {
     window.addEventListener('resize', this.handleResize);
     window.addEventListener('keydown', (e) => {
       if (e.key === '`') this.debugHud = !this.debugHud;
+      if ((e.key === 'p' || e.key === 'P') && this.state === 'playing') {
+        this.paused = !this.paused;
+      }
     });
 
     this.handleResize();
@@ -120,6 +126,16 @@ export default class Game {
     }
 
     // ── Playing state ──
+    if (this.paused) return;
+
+    // Update shield timer
+    if (this.player.shieldTimer > 0) {
+      this.player.shieldTimer -= dt;
+      if (this.player.shieldTimer <= 0) {
+        this.player.shieldTimer = 0;
+      }
+    }
+
     this.spawnManager.update(dt, this.camera, this.canvas);
     this.particleField.update(dt, this.camera);
     this.godRayTime += dt;
@@ -130,7 +146,7 @@ export default class Game {
 
     this.camera.update(this.player, dt);
 
-    if (!this.player.invulnerable) {
+    if (!this.player.invulnerable && this.player.shieldTimer <= 0) {
       const previousHealth = this.player.health;
 
       if (CollisionManager.checkPlayerVsCreatures(this.player, this.objects)) {
@@ -140,6 +156,9 @@ export default class Game {
       if (this.player.health < previousHealth) {
         this.handlePlayerDamage();
       }
+    } else {
+      // Still collect collectibles while shielded/invulnerable
+      CollisionManager.checkPlayerVsCreatures(this.player, this.objects);
     }
 
     this.objects = this.objects.filter((object) => (
@@ -176,6 +195,7 @@ export default class Game {
 
   startPlaying() {
     this.state = 'playing';
+    this.paused = false;
     this.objects = [];
     this.camera = new Camera();
     this.spawnManager = new SpawnManager(this);
@@ -233,8 +253,16 @@ export default class Game {
 
     if (this.isTouchDevice) this.drawTouchIndicators();
 
+    if (this.player.shieldTimer > 0) {
+      this.drawShieldEffect();
+    }
+
     if (this.state === 'gameover') {
       this.drawGameOver();
+    }
+
+    if (this.paused) {
+      this.pauseMenu.draw(this.ctx, this.width, this.height);
     }
   }
 
@@ -306,6 +334,8 @@ export default class Game {
     this.drawDepthHud();
     this.drawOxygenHud();
     this.drawHealthHud();
+    this.drawPauseHint();
+    if (this.player.shieldTimer > 0) this.drawShieldHud();
     if (this.debugHud) this.drawDebugStats();
     this.ctx.restore();
   }
@@ -370,6 +400,26 @@ export default class Game {
     }
 
     this.ctx.globalAlpha = 1;
+  }
+
+  drawPauseHint() {
+    this.ctx.font = '10px monospace';
+    this.ctx.textAlign = 'right';
+    this.ctx.textBaseline = 'bottom';
+    this.ctx.fillStyle = 'rgba(180, 220, 240, 0.3)';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('P to pause', this.width - 14, this.height - 10);
+  }
+
+  drawShieldHud() {
+    const secs = Math.ceil(this.player.shieldTimer);
+    this.ctx.font = '12px monospace';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'top';
+    const pulse = 0.6 + Math.sin(performance.now() * 0.008) * 0.4;
+    this.ctx.fillStyle = `rgba(255, 215, 80, ${pulse})`;
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText(`SHIELD ${secs}s`, this.width / 2, 84);
   }
 
   drawDebugStats() {
@@ -472,7 +522,9 @@ export default class Game {
     for (const object of this.objects) {
       if (object === this.player || !object.type) continue;
 
-      if (object.type === 'collectible') {
+      if (object.type === 'collectible' && object.constructor.name === 'ElixirShell') {
+        this.drawLightHole(object.pos.x, this.camera.worldToScreen(object.pos), 65);
+      } else if (object.type === 'collectible') {
         this.drawLightHole(object.pos.x, this.camera.worldToScreen(object.pos), 50);
       } else if (object.type === 'hazard') {
         this.drawLightHole(object.pos.x, this.camera.worldToScreen(object.pos), 60);
@@ -530,6 +582,46 @@ export default class Game {
     const x = (Math.random() * 2 - 1) * this.shakeIntensity;
     const y = (Math.random() * 2 - 1) * this.shakeIntensity;
     this.ctx.translate(x, y);
+  }
+
+  drawShieldEffect() {
+    const screenY = this.camera.worldToScreen(this.player.pos);
+    const sx = this.player.pos.x;
+    const pulse = Math.sin(performance.now() * 0.006) * 0.15 + 0.35;
+    const radius = 38 + Math.sin(performance.now() * 0.004) * 4;
+
+    // Golden shield bubble
+    const grad = this.ctx.createRadialGradient(sx, screenY, 0, sx, screenY, radius);
+    grad.addColorStop(0, `rgba(255, 215, 80, ${pulse * 0.15})`);
+    grad.addColorStop(0.7, `rgba(255, 200, 60, ${pulse * 0.25})`);
+    grad.addColorStop(1, 'rgba(255, 200, 60, 0)');
+
+    this.ctx.save();
+    this.ctx.fillStyle = grad;
+    this.ctx.beginPath();
+    this.ctx.arc(sx, screenY, radius, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Shield ring
+    this.ctx.strokeStyle = `rgba(255, 230, 120, ${pulse})`;
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.arc(sx, screenY, radius, 0, Math.PI * 2);
+    this.ctx.stroke();
+
+    // Timer indicator — arc that shrinks as shield wears off
+    const remaining = this.player.shieldTimer / 6;
+    this.ctx.strokeStyle = `rgba(255, 245, 180, ${0.6 + pulse * 0.3})`;
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.arc(
+      sx, screenY, radius + 4,
+      -Math.PI / 2,
+      -Math.PI / 2 + remaining * Math.PI * 2,
+    );
+    this.ctx.stroke();
+
+    this.ctx.restore();
   }
 
   drawGameOver() {

@@ -1,3 +1,4 @@
+cls
 import Vector2 from '../core/Vector2.js';
 import Creature from './Creature.js';
 
@@ -78,6 +79,10 @@ export default class Anglerfish extends Creature {
   }
 
   onCollisionWithPlayer(player) {
+    if (player.shieldTimer > 0) {
+      this.alive = false; // shield absorbs the hit
+      return;
+    }
     player.health -= this.damage;
     this.alive = false;
   }
