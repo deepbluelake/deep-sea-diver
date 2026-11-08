@@ -150,10 +150,15 @@ export default class MultiplayerMenu {
   draw(ctx, width, height) {
     this._buttonRects = [];
 
-    // Dark overlay
     ctx.save();
-    ctx.fillStyle = 'rgba(2, 12, 28, 0.92)';
-    ctx.fillRect(0, 0, width, height);
+
+    // Layered ocean backdrop
+    this._drawBackdrop(ctx, width, height);
+
+    // Framed card behind the centered input screens
+    if (this.screen === 'main' || this.screen === 'join') {
+      this._drawCard(ctx, width, height);
+    }
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -426,18 +431,110 @@ export default class MultiplayerMenu {
     }
   }
 
+  // ── Backdrop & card ───────────────────────────────────
+
+  _drawBackdrop(ctx, w, h) {
+    // Deep-ocean vertical gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'rgba(7, 30, 52, 0.92)');
+    grad.addColorStop(0.5, 'rgba(4, 18, 36, 0.94)');
+    grad.addColorStop(1, 'rgba(1, 8, 20, 0.96)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Soft central glow — a light from above
+    const glow = ctx.createRadialGradient(w / 2, h * 0.40, 0, w / 2, h * 0.40, Math.max(w, h) * 0.55);
+    glow.addColorStop(0, 'rgba(34, 120, 164, 0.22)');
+    glow.addColorStop(0.55, 'rgba(22, 78, 120, 0.08)');
+    glow.addColorStop(1, 'rgba(10, 40, 70, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
+
+    // Drifting bubbles for life
+    const t = this.game.titleTime || 0;
+    for (let i = 0; i < 16; i++) {
+      const bx = ((i * 137.5) % 100) / 100 * w;
+      const speed = 10 + (i % 5) * 7;
+      const by = h - (((t * speed) + i * 73) % (h + 60)) + 30;
+      const r = 1.5 + (i % 4) * 0.8;
+      const wobble = Math.sin(t * 1.2 + i) * 6;
+      ctx.fillStyle = `rgba(150, 215, 245, ${0.04 + (i % 3) * 0.025})`;
+      ctx.beginPath();
+      ctx.arc(bx + wobble, by, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Edge vignette for focus
+    const vig = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.34, w / 2, h / 2, Math.max(w, h) * 0.72);
+    vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    vig.addColorStop(1, 'rgba(0, 3, 10, 0.55)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  _drawCard(ctx, w, h) {
+    const cardW = 380;
+    const cardH = 384;
+    const cx = w / 2;
+    const cy = h / 2;
+    const x = cx - cardW / 2;
+    const y = cy - cardH / 2;
+
+    ctx.save();
+
+    // Drop glow
+    ctx.shadowColor = 'rgba(0, 130, 190, 0.35)';
+    ctx.shadowBlur = 44;
+
+    // Frosted panel
+    const g = ctx.createLinearGradient(x, y, x, y + cardH);
+    g.addColorStop(0, 'rgba(16, 44, 72, 0.6)');
+    g.addColorStop(1, 'rgba(8, 26, 48, 0.6)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.roundRect(x, y, cardW, cardH, 18);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+
+    // Rim light
+    ctx.strokeStyle = 'rgba(96, 196, 244, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Top highlight sheen
+    const sheen = ctx.createLinearGradient(x, y, x, y + 60);
+    sheen.addColorStop(0, 'rgba(180, 230, 255, 0.10)');
+    sheen.addColorStop(1, 'rgba(180, 230, 255, 0)');
+    ctx.fillStyle = sheen;
+    ctx.beginPath();
+    ctx.roundRect(x + 1, y + 1, cardW - 2, 60, [17, 17, 0, 0]);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
   // ── Shared drawing helpers ────────────────────────────
 
   _drawInputField(ctx, x, y, fieldWidth, value, active, placeholder) {
     const halfW = fieldWidth / 2;
 
+    ctx.save();
+
+    // Active glow
+    if (active) {
+      ctx.shadowColor = 'rgba(56, 189, 248, 0.55)';
+      ctx.shadowBlur = 12;
+    }
+
     // Background
-    ctx.fillStyle = active ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.06)';
-    ctx.strokeStyle = active ? '#38bdf8' : 'rgba(150, 210, 240, 0.25)';
+    ctx.fillStyle = active ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255, 255, 255, 0.05)';
+    ctx.strokeStyle = active ? '#5fd0ff' : 'rgba(150, 210, 240, 0.28)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.roundRect(x - halfW, y - 14, fieldWidth, 28, 6);
+    ctx.roundRect(x - halfW, y - 14, fieldWidth, 28, 7);
     ctx.fill();
+    ctx.shadowBlur = 0;
     ctx.stroke();
 
     // Text
@@ -449,27 +546,58 @@ export default class MultiplayerMenu {
       ctx.fillStyle = 'rgba(150, 210, 240, 0.3)';
       ctx.fillText(placeholder, x, y);
     }
+
+    ctx.restore();
   }
 
-  _drawButton(ctx, x, y, bw, bh, label, bgColor, textColor, action) {
+  _drawButton(ctx, x, y, bw, bh, label, bgColor, accent, action) {
+    const rx = x - bw / 2;
+    const ry = y - bh / 2;
+
+    ctx.save();
+
+    // Soft colored glow
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 14;
+
+    // Button fill
     ctx.fillStyle = bgColor;
     ctx.beginPath();
-    ctx.roundRect(x - bw / 2, y - bh / 2, bw, bh, 8);
+    ctx.roundRect(rx, ry, bw, bh, 10);
     ctx.fill();
 
-    ctx.strokeStyle = textColor + '44';
-    ctx.lineWidth = 1;
+    ctx.shadowBlur = 0;
+
+    // Top sheen
+    const sheen = ctx.createLinearGradient(rx, ry, rx, ry + bh);
+    sheen.addColorStop(0, 'rgba(255, 255, 255, 0.12)');
+    sheen.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = sheen;
+    ctx.beginPath();
+    ctx.roundRect(rx, ry, bw, bh, 10);
+    ctx.fill();
+
+    // Accent border
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.roundRect(rx, ry, bw, bh, 10);
     ctx.stroke();
 
+    // Label — bright with accent glow for contrast
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 6;
     ctx.font = 'bold 13px monospace';
-    ctx.fillStyle = textColor;
+    ctx.fillStyle = '#eefaff';
     ctx.fillText(label, x, y);
+
+    ctx.restore();
 
     // Store clickable rect for handleClick()
     if (action) {
       this._buttonRects.push({
-        x: x - bw / 2,
-        y: y - bh / 2,
+        x: rx,
+        y: ry,
         w: bw,
         h: bh,
         action,

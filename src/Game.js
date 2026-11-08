@@ -286,11 +286,11 @@ export default class Game {
   // ══════════════════════════════════════════════════════
 
   _handleTitleClick(x, y) {
-    // Check if "Multiplayer" button was clicked
-    const btnW = 200;
-    const btnH = 36;
+    // Check if "Multiplayer" button was clicked (matches _drawMultiplayerButton geometry)
+    const btnW = 168;
+    const btnH = 40;
     const bx = this.width / 2 - btnW / 2;
-    const by = this.height / 2 + 90;
+    const by = this.height / 2 + 106 - btnH / 2;
 
     if (x >= bx && x <= bx + btnW && y >= by && y <= by + btnH) {
       this.state = 'multiplayer';
@@ -638,23 +638,46 @@ export default class Game {
   }
 
   _drawMultiplayerButton() {
-    const bw = 200;
-    const bh = 36;
-    const bx = this.width / 2;
-    const by = this.height / 2 + 108;
+    const bw = 168;
+    const bh = 40;
+    const cx = this.width / 2;
+    const cy = this.height / 2 + 106;
+    const x = cx - bw / 2;
+    const y = cy - bh / 2;
+    const r = bh / 2; // pill
 
-    this.ctx.fillStyle = 'rgba(0, 80, 120, 0.6)';
+    this.ctx.save();
+
+    // Soft outer glow
+    this.ctx.shadowColor = 'rgba(80, 200, 255, 0.4)';
+    this.ctx.shadowBlur = 16;
+
+    // Frosted gradient fill
+    const grad = this.ctx.createLinearGradient(x, y, x, y + bh);
+    grad.addColorStop(0, 'rgba(22, 100, 140, 0.6)');
+    grad.addColorStop(1, 'rgba(10, 58, 88, 0.6)');
+    this.ctx.fillStyle = grad;
     this.ctx.beginPath();
-    this.ctx.roundRect(bx - bw / 2, by - bh / 2, bw, bh, 8);
+    this.ctx.roundRect(x, y, bw, bh, r);
     this.ctx.fill();
 
-    this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-    this.ctx.lineWidth = 1;
+    this.ctx.shadowBlur = 0;
+
+    // Bright ring
+    this.ctx.strokeStyle = 'rgba(170, 236, 255, 0.75)';
+    this.ctx.lineWidth = 1.5;
     this.ctx.stroke();
 
-    this.ctx.font = 'bold 13px monospace';
-    this.ctx.fillStyle = '#38bdf8';
-    this.ctx.fillText('MULTIPLAYER', bx, by);
+    // Label — white with cyan glow for readability
+    this.ctx.shadowColor = 'rgba(0, 210, 255, 0.7)';
+    this.ctx.shadowBlur = 8;
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.font = 'bold 14px monospace';
+    this.ctx.fillStyle = '#f0fbff';
+    this.ctx.fillText('MULTIPLAYER', cx, cy + 1);
+
+    this.ctx.restore();
   }
 
   // ── HUD ────────────────────────────────────────────────

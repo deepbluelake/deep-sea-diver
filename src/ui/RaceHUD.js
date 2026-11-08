@@ -45,47 +45,74 @@ export default class RaceHUD {
   // ── Draw ──────────────────────────────────────────────
 
   draw(ctx, width, height, localPlayerName) {
-    this._drawLeaderboard(ctx, width, localPlayerName);
+    this._drawLeaderboard(ctx, width, height, localPlayerName);
     this._drawAlerts(ctx, width, height);
-    this._drawRaceTimer(ctx, width);
   }
 
-  // ── Leaderboard panel (top-right) ─────────────────────
+  // ── Leaderboard panel (bottom-left) ───────────────────
 
-  _drawLeaderboard(ctx, canvasWidth, localPlayerName) {
+  _drawLeaderboard(ctx, canvasWidth, canvasHeight, localPlayerName) {
     if (this.leaderboard.length === 0) return;
 
-    const panelW = 160;
-    const rowH = 22;
-    const panelH = 28 + this.leaderboard.length * rowH + 8;
-    const px = canvasWidth - panelW - 12;
-    const py = 12;
+    const panelW = 172;
+    const rowH = 23;
+    const headerH = 30;
+    const padBottom = 10;
+    const panelH = headerH + this.leaderboard.length * rowH + padBottom;
+    const px = 14;
+    const py = canvasHeight - panelH - 16;
 
     ctx.save();
 
-    // Panel background
-    ctx.fillStyle = 'rgba(2, 12, 28, 0.7)';
+    // Panel background — soft vertical gradient
+    const bg = ctx.createLinearGradient(px, py, px, py + panelH);
+    bg.addColorStop(0, 'rgba(8, 28, 48, 0.82)');
+    bg.addColorStop(1, 'rgba(3, 14, 28, 0.82)');
+    ctx.fillStyle = bg;
     ctx.beginPath();
-    ctx.roundRect(px, py, panelW, panelH, 8);
+    ctx.roundRect(px, py, panelW, panelH, 10);
     ctx.fill();
 
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+    // Subtle glowing border
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Header
+    // Accent bar on the left edge
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.5)';
+    ctx.beginPath();
+    ctx.roundRect(px, py + 8, 3, panelH - 16, 2);
+    ctx.fill();
+
+    // Header: "RACE  m:ss"  +  "DEPTH"
+    const mins = Math.floor(this.raceTime / 60);
+    const secs = Math.floor(this.raceTime % 60);
+    const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.font = 'bold 10px monospace';
-    ctx.fillStyle = 'rgba(150, 210, 240, 0.6)';
-    ctx.fillText('RACE', px + 10, py + 14);
+    ctx.fillStyle = 'rgba(150, 210, 240, 0.65)';
+    ctx.fillText('RACE', px + 14, py + 15);
+
+    ctx.fillStyle = 'rgba(125, 246, 181, 0.85)';
+    ctx.fillText(timeStr, px + 50, py + 15);
 
     ctx.textAlign = 'right';
-    ctx.fillText('DEPTH', px + panelW - 10, py + 14);
+    ctx.fillStyle = 'rgba(150, 210, 240, 0.5)';
+    ctx.fillText('DEPTH', px + panelW - 12, py + 15);
+
+    // Divider under header
+    ctx.strokeStyle = 'rgba(120, 180, 220, 0.14)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px + 10, py + headerH - 4);
+    ctx.lineTo(px + panelW - 10, py + headerH - 4);
+    ctx.stroke();
 
     // Rows
     ctx.textBaseline = 'middle';
-    let y = py + 30;
+    let y = py + headerH + rowH / 2;
 
     for (const entry of this.leaderboard) {
       const isLocal = entry.name === localPlayerName;
@@ -93,30 +120,32 @@ export default class RaceHUD {
 
       // Highlight row for local player
       if (isLocal) {
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.1)';
-        ctx.fillRect(px + 4, y - rowH / 2, panelW - 8, rowH);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+        ctx.beginPath();
+        ctx.roundRect(px + 6, y - rowH / 2 + 1, panelW - 12, rowH - 2, 5);
+        ctx.fill();
       }
 
-      // Rank
+      // Name (with rank marker / skull)
       ctx.textAlign = 'left';
       ctx.font = 'bold 11px monospace';
       ctx.fillStyle = dead
-        ? 'rgba(255, 100, 100, 0.5)'
+        ? 'rgba(255, 120, 120, 0.55)'
         : isLocal
-          ? '#38bdf8'
-          : '#f7fdff';
+          ? '#5fd0ff'
+          : '#eef9ff';
 
       const rankIcon = entry.rank === 1 ? '▸' : ' ';
       const nameDisplay = dead ? `☠ ${entry.name}` : `${rankIcon} ${entry.name}`;
-      ctx.fillText(nameDisplay, px + 8, y);
+      ctx.fillText(nameDisplay, px + 12, y);
 
       // Depth
       ctx.textAlign = 'right';
       ctx.font = '11px monospace';
       ctx.fillStyle = dead
-        ? 'rgba(255, 100, 100, 0.4)'
-        : 'rgba(200, 230, 255, 0.8)';
-      ctx.fillText(`${entry.depth}m`, px + panelW - 10, y);
+        ? 'rgba(255, 120, 120, 0.45)'
+        : 'rgba(190, 228, 255, 0.85)';
+      ctx.fillText(`${entry.depth}m`, px + panelW - 12, y);
 
       y += rowH;
     }
@@ -150,22 +179,6 @@ export default class RaceHUD {
       y += 24;
     }
 
-    ctx.restore();
-  }
-
-  // ── Race timer (top-center) ───────────────────────────
-
-  _drawRaceTimer(ctx, width) {
-    const mins = Math.floor(this.raceTime / 60);
-    const secs = Math.floor(this.raceTime % 60);
-    const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.font = '12px monospace';
-    ctx.fillStyle = 'rgba(150, 210, 240, 0.45)';
-    ctx.fillText(timeStr, width / 2, 14);
     ctx.restore();
   }
 }
