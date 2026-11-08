@@ -1,0 +1,16 @@
+{
+  "name": "deep-sea-diver-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "socket.io": "^4.7.5",
+    "nanoid": "^5.0.7",
+    "cors": "^2.8.5"
+  }
+}

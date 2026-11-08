@@ -7,6 +7,10 @@ import DepthManager from './managers/DepthManager.js';
 import ParticleField from './managers/ParticleField.js';
 import SpawnManager from './managers/SpawnManager.js';
 import PauseMenu from './ui/PauseMenu.js';
+import MultiplayerMenu from './ui/MultiplayerMenu.js';
+import RaceHUD from './ui/RaceHUD.js';
+
+const SHIELD_DURATION = 10;
 
 export default class Game {
   constructor(canvas) {
@@ -39,9 +43,17 @@ export default class Game {
     this.titleTime = 0;
     this.gameOverTimer = 0;
     this.bestDepth = 0;
-    this.state = 'title'; // 'title' | 'playing' | 'gameover'
+    this.state = 'title'; // 'title' | 'playing' | 'gameover' | 'multiplayer'
     this.isRunning = false;
     this.isTouchDevice = 'ontouchstart' in window;
+
+    // ── Multiplayer state ─────────────────────────────────
+    this.client = null;
+    this.ghosts = new Map();           // id → GhostPlayer
+    this.multiplayerMenu = new MultiplayerMenu(this);
+    this.raceHUD = new RaceHUD();
+    this.isMultiplayerRace = false;    // true while racing in multiplayer
+    this.multiplayerPlayerName = '';
 
     this.handleResize = this.handleResize.bind(this);
     this.loop = this.loop.bind(this);
@@ -49,8 +61,21 @@ export default class Game {
     window.addEventListener('resize', this.handleResize);
     window.addEventListener('keydown', (e) => {
       if (e.key === '`') this.debugHud = !this.debugHud;
-      if ((e.key === 'p' || e.key === 'P') && this.state === 'playing') {
+      if ((e.key === 'p' || e.key === 'P') && this.state === 'playing' && !this.isMultiplayerRace) {
         this.paused = !this.paused;
+      }
+    });
+
+    // Click handling for title + multiplayer menu
+    this.canvas.addEventListener('click', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (this.state === 'title') {
+        this._handleTitleClick(x, y);
+      } else if (this.state === 'multiplayer') {
+        this.multiplayerMenu.handleClick(x, y);
       }
     });
 
@@ -117,9 +142,26 @@ export default class Game {
       return;
     }
 
+    if (this.state === 'multiplayer') {
+      // Menu is event-driven; just animate the background
+      this.titleTime += dt;
+      this.godRayTime += dt;
+      this.particleField.update(dt, this.camera);
+      for (const fish of this.titleFish) {
+        fish.update(dt);
+        if (fish.pos.x < -40) fish.pos.x = this.width + 40;
+        if (fish.pos.x > this.width + 40) fish.pos.x = -40;
+      }
+      return;
+    }
+
     if (this.state === 'gameover') {
       this.gameOverTimer += dt;
       if (this.gameOverTimer >= 0.8 && (this.input.isDown('r') || this.input.isDown('R'))) {
+        if (this.isMultiplayerRace) {
+          // In multiplayer, dying doesn't restart — wait for race end
+          return;
+        }
         this.resetGame();
       }
       return;
@@ -169,7 +211,21 @@ export default class Game {
     this.shakeTimer = Math.max(0, this.shakeTimer - dt);
     this.redFlashTimer = Math.max(0, this.redFlashTimer - dt);
 
+    // ── Multiplayer: update ghosts ───────────────────────
+    // State broadcasting is handled by Client.startNetworkTick() (setInterval),
+    // independent of requestAnimationFrame, so it keeps running in background tabs.
+    if (this.isMultiplayerRace && this.client) {
+      for (const ghost of this.ghosts.values()) {
+        ghost.update(dt);
+      }
+
+      this.raceHUD.update(dt);
+    }
+
     if (this.player.health <= 0) {
+      if (this.isMultiplayerRace && this.client) {
+        this.client.sendDied();
+      }
       this.enterGameOver();
     }
   }
@@ -182,7 +238,6 @@ export default class Game {
     // Animate title fish
     for (const fish of this.titleFish) {
       fish.update(dt);
-      // Wrap fish horizontally so they swim across forever
       if (fish.pos.x < -40) fish.pos.x = this.width + 40;
       if (fish.pos.x > this.width + 40) fish.pos.x = -40;
     }
@@ -218,9 +273,240 @@ export default class Game {
   }
 
   resetGame() {
+    this.isMultiplayerRace = false;
+    this.ghosts.clear();
+    this.raceHUD.reset();
     this.state = 'title';
     this.titleTime = 0;
     this.setupTitleScreen();
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  MULTIPLAYER
+  // ══════════════════════════════════════════════════════
+
+  _handleTitleClick(x, y) {
+    // Check if "Multiplayer" button was clicked
+    const btnW = 200;
+    const btnH = 36;
+    const bx = this.width / 2 - btnW / 2;
+    const by = this.height / 2 + 90;
+
+    if (x >= bx && x <= bx + btnW && y >= by && y <= by + btnH) {
+      this.state = 'multiplayer';
+      this.multiplayerMenu.screen = 'main';
+      this.multiplayerMenu.error = '';
+    }
+  }
+
+  /**
+   * Connect to the server and create a new room.
+   */
+  async createMultiplayerRoom(playerName) {
+    this.multiplayerPlayerName = playerName;
+
+    try {
+      if (!this.client) {
+        const { default: Client } = await import('./net/Client.js');
+        this.client = new Client(this._getServerUrl());
+      }
+
+      if (!this.client.connected) {
+        await this.client.connect();
+      }
+
+      this._setupMultiplayerCallbacks();
+
+      this.client.createRoom(playerName, (result) => {
+        if (result.success) {
+          this.multiplayerMenu.roomCode = result.code;
+          this.multiplayerMenu.screen = 'lobby';
+          this.multiplayerMenu.connecting = false;
+        } else {
+          this.multiplayerMenu.error = result.error || 'Failed to create room';
+          this.multiplayerMenu.connecting = false;
+        }
+      });
+    } catch (err) {
+      this.multiplayerMenu.error = 'Could not connect to server';
+      this.multiplayerMenu.connecting = false;
+      console.error('Multiplayer connect error:', err);
+    }
+  }
+
+  /**
+   * Connect to the server and join an existing room by code.
+   */
+  async joinMultiplayerRoom(code, playerName) {
+    this.multiplayerPlayerName = playerName;
+
+    try {
+      if (!this.client) {
+        const { default: Client } = await import('./net/Client.js');
+        this.client = new Client(this._getServerUrl());
+      }
+
+      if (!this.client.connected) {
+        await this.client.connect();
+      }
+
+      this._setupMultiplayerCallbacks();
+
+      this.client.joinRoom(code, playerName, (result) => {
+        if (result.success) {
+          this.multiplayerMenu.roomCode = result.code;
+          this.multiplayerMenu.screen = 'lobby';
+          this.multiplayerMenu.connecting = false;
+        } else {
+          this.multiplayerMenu.error = result.error || 'Failed to join room';
+          this.multiplayerMenu.connecting = false;
+        }
+      });
+    } catch (err) {
+      this.multiplayerMenu.error = 'Could not connect to server';
+      this.multiplayerMenu.connecting = false;
+      console.error('Multiplayer connect error:', err);
+    }
+  }
+
+  /**
+   * Disconnect and return to title.
+   */
+  leaveMultiplayer() {
+    if (this.client) {
+      this.client.disconnect();
+      this.client = null;
+    }
+    this.ghosts.clear();
+    this.isMultiplayerRace = false;
+    this.raceHUD.reset();
+  }
+
+  /**
+   * Determine server URL — localhost in dev, configurable in production.
+   */
+  _getServerUrl() {
+    if (window.__DEEP_SEA_SERVER__) return window.__DEEP_SEA_SERVER__;
+
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      return 'http://localhost:3001';
+    }
+
+    // Production: set window.__DEEP_SEA_SERVER__ in index.html or via env
+    return window.__DEEP_SEA_SERVER__ || 'http://localhost:3001';
+  }
+
+  /**
+   * Wire up all Socket.IO event callbacks.
+   */
+  _setupMultiplayerCallbacks() {
+    if (!this.client) return;
+
+    let GhostPlayerClass = null;
+
+    // Room update — player list changed
+    this.client.onRoomUpdate = (data) => {
+      this.multiplayerMenu.players = data.players;
+      this.multiplayerMenu.hostId = data.hostId;
+
+      if (data.state === 'lobby' && this.isMultiplayerRace) {
+        // Race ended, back to lobby
+        this.isMultiplayerRace = false;
+        this.client?.stopNetworkTick();
+        this.ghosts.clear();
+        this.raceHUD.reset();
+        this.state = 'multiplayer';
+        this.multiplayerMenu.screen = 'lobby';
+      } else if (data.state === 'lobby' && this.state === 'multiplayer') {
+        this.multiplayerMenu.screen = 'lobby';
+      }
+    };
+
+    // Countdown started
+    this.client.onCountdownStart = () => {
+      this.multiplayerMenu.screen = 'countdown';
+      this.multiplayerMenu.countdownNumber = 3;
+    };
+
+    // Countdown tick
+    this.client.onCountdownTick = (seconds) => {
+      this.multiplayerMenu.countdownNumber = seconds;
+    };
+
+    // Race start — kick off the game
+    this.client.onRaceStart = async () => {
+      if (!GhostPlayerClass) {
+        const module = await import('./net/GhostPlayer.js');
+        GhostPlayerClass = module.default;
+      }
+
+      // Create ghost players for every opponent
+      this.ghosts.clear();
+      let colorIdx = 0;
+      for (const p of this.multiplayerMenu.players) {
+        if (p.id !== this.client.playerId) {
+          this.ghosts.set(p.id, new GhostPlayerClass(p.id, p.name, colorIdx));
+          colorIdx++;
+        }
+      }
+
+      this.isMultiplayerRace = true;
+      this.raceHUD.reset();
+      this.startPlaying();
+
+      // Start interval-based network tick (independent of RAF, survives tab backgrounding)
+      this.client.getStateSnapshot = () => ({
+        x: this.player.pos.x,
+        depth: this.player.depth,
+        score: this.player.score,
+        oxygen: this.player.oxygen,
+        health: this.player.health,
+      });
+      this.client.startNetworkTick();
+    };
+
+    // Opponent state update
+    this.client.onOpponentState = (data) => {
+      const ghost = this.ghosts.get(data.id);
+      if (ghost) ghost.setTarget(data);
+    };
+
+    // Leaderboard update
+    this.client.onLeaderboard = (entries) => {
+      this.raceHUD.updateLeaderboard(entries);
+    };
+
+    // Player eliminated
+    this.client.onPlayerEliminated = (data) => {
+      const ghost = this.ghosts.get(data.id);
+      if (ghost) ghost.alive = false;
+      this.raceHUD.addAlert(`${data.name} eliminated!`);
+    };
+
+    // Player left mid-race
+    this.client.onPlayerLeft = (data) => {
+      this.ghosts.delete(data.id);
+    };
+
+    // Race ended
+    this.client.onRaceEnd = (data) => {
+      this.isMultiplayerRace = false;
+      this.client?.stopNetworkTick();
+      this.state = 'multiplayer';
+      this.multiplayerMenu.screen = 'results';
+      this.multiplayerMenu.results = data;
+    };
+
+    // Disconnect
+    this.client.onDisconnect = () => {
+      this.isMultiplayerRace = false;
+      this.ghosts.clear();
+      this.raceHUD.reset();
+      this.state = 'multiplayer';
+      this.multiplayerMenu.screen = 'main';
+      this.multiplayerMenu.error = 'Disconnected from server';
+      this.client = null;
+    };
   }
 
   // ── Render by state ────────────────────────────────────
@@ -230,6 +516,12 @@ export default class Game {
 
     if (this.state === 'title') {
       this.renderTitle();
+      return;
+    }
+
+    if (this.state === 'multiplayer') {
+      this.renderTitle(); // Ocean background behind menu
+      this.multiplayerMenu.draw(this.ctx, this.width, this.height);
       return;
     }
 
@@ -245,6 +537,13 @@ export default class Game {
       object.draw(this.ctx);
     }
 
+    // Draw ghost players during multiplayer race
+    if (this.isMultiplayerRace) {
+      for (const ghost of this.ghosts.values()) {
+        ghost.draw(this.ctx, this.camera.y, this.height);
+      }
+    }
+
     this.ctx.restore();
     this.drawDarknessOverlay();
     this.drawHud();
@@ -255,6 +554,11 @@ export default class Game {
 
     if (this.player.shieldTimer > 0) {
       this.drawShieldEffect();
+    }
+
+    // Multiplayer race HUD (leaderboard + alerts)
+    if (this.isMultiplayerRace) {
+      this.raceHUD.draw(this.ctx, this.width, this.height, this.multiplayerPlayerName);
     }
 
     if (this.state === 'gameover') {
@@ -287,6 +591,9 @@ export default class Game {
     }
     this.ctx.restore();
 
+    // Skip title text when multiplayer menu is overlaid
+    if (this.state === 'multiplayer') return;
+
     // Title text
     this.ctx.save();
     this.ctx.textAlign = 'center';
@@ -313,6 +620,9 @@ export default class Game {
     this.ctx.fillText('Press ENTER or SPACE to dive', this.width / 2, this.height / 2 + 50);
     this.ctx.globalAlpha = 1;
 
+    // Multiplayer button
+    this._drawMultiplayerButton();
+
     // Controls hint
     this.ctx.font = '12px monospace';
     this.ctx.fillStyle = 'rgba(200, 240, 255, 0.45)';
@@ -325,6 +635,26 @@ export default class Game {
     }
 
     this.ctx.restore();
+  }
+
+  _drawMultiplayerButton() {
+    const bw = 200;
+    const bh = 36;
+    const bx = this.width / 2;
+    const by = this.height / 2 + 108;
+
+    this.ctx.fillStyle = 'rgba(0, 80, 120, 0.6)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(bx - bw / 2, by - bh / 2, bw, bh, 8);
+    this.ctx.fill();
+
+    this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+    this.ctx.lineWidth = 1;
+    this.ctx.stroke();
+
+    this.ctx.font = 'bold 13px monospace';
+    this.ctx.fillStyle = '#38bdf8';
+    this.ctx.fillText('MULTIPLAYER', bx, by);
   }
 
   // ── HUD ────────────────────────────────────────────────
@@ -403,6 +733,7 @@ export default class Game {
   }
 
   drawPauseHint() {
+    if (this.isMultiplayerRace) return; // No pausing in multiplayer
     this.ctx.font = '10px monospace';
     this.ctx.textAlign = 'right';
     this.ctx.textBaseline = 'bottom';
@@ -610,7 +941,7 @@ export default class Game {
     this.ctx.stroke();
 
     // Timer indicator — arc that shrinks as shield wears off
-    const remaining = this.player.shieldTimer / 6;
+    const remaining = this.player.shieldTimer / SHIELD_DURATION;
     this.ctx.strokeStyle = `rgba(255, 245, 180, ${0.6 + pulse * 0.3})`;
     this.ctx.lineWidth = 3;
     this.ctx.beginPath();
@@ -643,7 +974,11 @@ export default class Game {
     this.ctx.fillText(`Score ${this.player.score}`, this.width / 2, this.height / 2 + 28);
     this.ctx.fillText(`Best ${Math.floor(this.bestDepth)}m`, this.width / 2, this.height / 2 + 56);
 
-    if (this.gameOverTimer >= 0.8) {
+    if (this.isMultiplayerRace) {
+      this.ctx.font = '13px monospace';
+      this.ctx.fillStyle = 'rgba(200, 230, 255, 0.6)';
+      this.ctx.fillText('Waiting for race to end...', this.width / 2, this.height / 2 + 96);
+    } else if (this.gameOverTimer >= 0.8) {
       const pulse = 0.5 + Math.sin(this.gameOverTimer * 3) * 0.3 + 0.2;
       this.ctx.globalAlpha = fade * pulse;
       this.ctx.fillText('Press R to restart', this.width / 2, this.height / 2 + 96);
