@@ -392,8 +392,7 @@ export default class Game {
       return 'http://localhost:3001';
     }
 
-    // Production: set window.__DEEP_SEA_SERVER__ in index.html or via env
-    return window.__DEEP_SEA_SERVER__ || 'http://localhost:3001';
+    return 'https://deep-sea-diver-production.up.railway.app';
   }
 
   /**
