@@ -21,6 +21,9 @@ export default class MultiplayerMenu {
     this.inputActive = 'name'; // 'name' | 'code'
     this.connecting = false;
 
+    this._codeCopied = false;
+    this._copyTimer = null;
+
     /** @type {{ x: number, y: number, w: number, h: number, action: Function }[]} */
     this._buttonRects = [];
 
@@ -315,10 +318,48 @@ export default class MultiplayerMenu {
     ctx.fillText(this.roomCode, cx, y);
     ctx.letterSpacing = '0px';
 
-    ctx.font = '11px monospace';
-    ctx.fillStyle = 'rgba(150, 210, 240, 0.5)';
-    y += 25;
-    ctx.fillText('Share this code with friends', cx, y);
+    // Copy button
+    y += 28;
+    const copyLabel = this._codeCopied ? '✓ Copied!' : '⧉ Copy Code';
+    const copyFont = '12px monospace';
+    ctx.font = copyFont;
+    const copyW = ctx.measureText(copyLabel).width + 24;
+    const copyH = 26;
+    const copyX = cx - copyW / 2;
+    const copyY = y - copyH / 2;
+
+    ctx.save();
+    if (this._codeCopied) {
+      ctx.fillStyle = 'rgba(52, 211, 153, 0.18)';
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.5)';
+    } else {
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.1)';
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+    }
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(copyX, copyY, copyW, copyH, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.font = copyFont;
+    ctx.fillStyle = this._codeCopied ? '#34d399' : 'rgba(150, 210, 240, 0.7)';
+    ctx.fillText(copyLabel, cx, y);
+    ctx.restore();
+
+    // Register copy button hitbox
+    this._buttonRects.push({
+      x: copyX, y: copyY, w: copyW, h: copyH,
+      action: () => {
+        if (this.roomCode && navigator.clipboard) {
+          navigator.clipboard.writeText(this.roomCode).then(() => {
+            this._codeCopied = true;
+            clearTimeout(this._copyTimer);
+            this._copyTimer = setTimeout(() => { this._codeCopied = false; }, 2000);
+          });
+        }
+      },
+    });
 
     // Player list
     y += 40;
